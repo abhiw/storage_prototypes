@@ -1,0 +1,10 @@
+# Storage configuration
+[storage]
+# Maximum file size in bytes before rotation
+max_file_size = 512
+
+# Storage directory path
+directory = "storage"
+
+# Auto-merge interval in seconds (merge after this many seconds of inactivity)
+merge_interval_seconds = 30
