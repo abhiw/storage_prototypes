@@ -1,5 +1,4 @@
-# Data Intensive Applications
-
+# Storage data structures related experiments
 This project is a key-value storage system designed to handle data-intensive workloads. It is built in Rust and features a log-structured storage engine, an in-memory hash table for indexing, and an efficient event loop for handling user input.
 
 ## Design
