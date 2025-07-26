@@ -2,6 +2,7 @@ use std::fs::{File, OpenOptions, create_dir_all, read_dir, remove_file};
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use crc::{Crc, CRC_16_IBM_SDLC};
 use crate::hash_table::FileLocation;
 
 /// Trait for hash table operations needed during merge
@@ -19,6 +20,7 @@ pub const TOMBSTONE_MARKER: &str = "\\DELETED\\";
 pub enum StorageError {
     Io(std::io::Error),
     KeyDeleted(String),
+    CorruptedData(String),
 }
 
 impl std::fmt::Display for StorageError {
@@ -26,6 +28,7 @@ impl std::fmt::Display for StorageError {
         match self {
             StorageError::Io(e) => write!(f, "IO error: {}", e),
             StorageError::KeyDeleted(key) => write!(f, "Key '{}' has been deleted", key),
+            StorageError::CorruptedData(msg) => write!(f, "Data corruption: {}", msg),
         }
     }
 }
@@ -92,7 +95,8 @@ impl Storage {
     /// Writes a key-value pair to storage and returns the FileLocation
     /// Format: [key_size: 4 bytes][value_size: 4 bytes][key: key_size bytes][value: value_size bytes]
     /// Rotates to new file if current file would exceed 512 bytes
-    pub fn write(&mut self, key: &str, value: &str) -> std::io::Result<(String, u64)> {
+    /// filename, value_offset, value_size, crc
+    pub fn write(&mut self, key: &str, value: &str) -> std::io::Result<(String, u64, u32, u16)> {
         // Calculate size of entry to be written
         let key_bytes = key.as_bytes();
         let value_bytes = value.as_bytes();
@@ -103,8 +107,8 @@ impl Storage {
             self.rotate_file()?;
         }
         
-        // Get current file position (this will be our offset)
-        let offset = self.current_file.seek(SeekFrom::End(0))?;
+        // Get current file position (this will be our record start offset)
+        let record_start = self.current_file.seek(SeekFrom::End(0))?;
         
         // Prepare data to write
         let key_size = key_bytes.len() as u32;
@@ -119,13 +123,17 @@ impl Storage {
         
         // Update current file size
         self.current_file_size += entry_size as u64;
-        
-        Ok((self.current_filename.clone(), offset))
+
+        // Calculate value offset: record_start + key_size + value_size + key_bytes
+        let value_offset = record_start + 4 + 4 + key_bytes.len() as u64;
+
+        const X25: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_SDLC);
+        Ok((self.current_filename.clone(), value_offset, value_size, X25.checksum(value_bytes)))
     }
 
     /// Marks a key as deleted by writing a tombstone entry
     /// Returns the FileLocation of the tombstone
-    pub fn delete(&mut self, key: &str) -> std::io::Result<(String, u64)> {
+    pub fn delete(&mut self, key: &str) -> std::io::Result<(String, u64, u32, u16)> {
         self.write(key, TOMBSTONE_MARKER)
     }
 
@@ -185,42 +193,38 @@ impl Storage {
     }
 
     /// Reads only the value from the specified file at the given byte offset
-    /// More efficient when key is not needed. Returns error if key is deleted.
-    pub fn read_value(&mut self, filename: &str, offset: u64) -> Result<String, StorageError> {
+    /// More efficient when key is not needed. Returns error if key is deleted or data is corrupted.
+    pub fn read_value(&mut self, filename: &str, value_offset: u64, value_size: u32, expected_crc: u16, key: &str) -> Result<String, StorageError> {
         let file_path = self.storage_dir.join(filename);
         let mut file = OpenOptions::new()
             .read(true)
             .open(&file_path)?;
         
         // Seek to the offset
-        file.seek(SeekFrom::Start(offset))?;
-        
-        // Read key_size and value_size (4 bytes each)
-        let mut size_buf = [0u8; 4];
-        file.read_exact(&mut size_buf)?;
-        let key_size = u32::from_le_bytes(size_buf) as usize;
-        
-        file.read_exact(&mut size_buf)?;
-        let value_size = u32::from_le_bytes(size_buf) as usize;
-        
-        // Skip key data
-        file.seek(SeekFrom::Current(key_size as i64))?;
-        
+        file.seek(SeekFrom::Start(value_offset))?;
+
+        let value_size = value_size as usize;
+
         // Read value
         let mut value_buf = vec![0u8; value_size];
         file.read_exact(&mut value_buf)?;
+        
+        // Verify CRC before converting to string
+        const X25: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_SDLC);
+        let calculated_crc = X25.checksum(value_buf.as_slice());
+        if calculated_crc != expected_crc {
+            return Err(StorageError::CorruptedData(format!(
+                "CRC mismatch for key '{}': expected {}, got {}", 
+                key, expected_crc, calculated_crc
+            )));
+        }
+        
         let value = String::from_utf8(value_buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         
         // Check if this is a tombstone (deleted key)
         if value == TOMBSTONE_MARKER {
-            // We need to read the key to provide meaningful error
-            file.seek(SeekFrom::Start(offset + 8))?; // Skip sizes, go to key
-            let mut key_buf = vec![0u8; key_size];
-            file.read_exact(&mut key_buf)?;
-            let key = String::from_utf8(key_buf)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            return Err(StorageError::KeyDeleted(key));
+            return Err(StorageError::KeyDeleted(key.parse().unwrap()));
         }
         
         Ok(value)
@@ -338,11 +342,12 @@ impl Storage {
             }
             
             // Write the latest value to current active file
-            let (filename, offset) = self.write(&key, &value)?;
+            // filename, value_offset, value_size, crc
+            let (filename, value_offset, value_size, crc) = self.write(&key, &value)?;
             
             // Update hash table with new location if provided
             if let Some(ref mut ht) = hash_table {
-                ht.insert(&key, FileLocation::new(filename, offset));
+                ht.insert(&key, FileLocation::new(filename, value_size, value_offset, crc));
             }
             
             entries_written += 1;

@@ -177,10 +177,10 @@ fn perform_merge(storage: &mut Storage, hash_table: &mut HashTable) {
 
 fn handle_insert(storage: &mut Storage, hash_table: &mut HashTable, key: &str, value: &str) {
     match storage.write(key, value) {
-        Ok((filename, offset)) => {
-            let file_location = crate::FileLocation::new(filename.clone(), offset);
+        Ok((filename, value_offset, value_size, crc)) => {
+            let file_location = crate::FileLocation::new(filename.clone(),  value_size, value_offset, crc);
             hash_table.insert(key, file_location);
-            println!("✓ Inserted {}: {} (file: {}, offset: {})", key, value, filename, offset);
+            println!("✓ Inserted {}: {} (file: {}, value_offset: {})", key, value, filename, value_offset);
         }
         Err(e) => println!("✗ Failed to insert {}: {}", key, e),
     }
@@ -188,10 +188,10 @@ fn handle_insert(storage: &mut Storage, hash_table: &mut HashTable, key: &str, v
 
 fn handle_delete(storage: &mut Storage, hash_table: &mut HashTable, key: &str) {
     match storage.delete(key) {
-        Ok((filename, offset)) => {
-            let file_location = crate::FileLocation::new(filename.clone(), offset);
+        Ok((filename, value_offset, value_size, crc)) => {
+            let file_location = crate::FileLocation::new(filename.clone(),  value_size, value_offset, crc);
             hash_table.insert(key, file_location);
-            println!("✓ Deleted {} (tombstone: file {}, offset {})", key, filename, offset);
+            println!("✓ Deleted {} (tombstone: file {}, value_offset {})", key, filename, value_offset);
         }
         Err(e) => println!("✗ Failed to delete {}: {}", key, e),
     }
@@ -200,7 +200,7 @@ fn handle_delete(storage: &mut Storage, hash_table: &mut HashTable, key: &str) {
 fn handle_get(storage: &mut Storage, hash_table: &mut HashTable, key: &str) {
     match hash_table.get(key) {
         Some(file_location) => {
-            match storage.read_value(&file_location.filename, file_location.offset) {
+            match storage.read_value(&file_location.filename, file_location.value_offset, file_location.value_size, file_location.crc, key) {
                 Ok(value) => {
                     println!("✓ {}: {}", key, value);
                 }

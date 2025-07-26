@@ -191,7 +191,7 @@ test_file_rotation() {
     
     # Verify data integrity after rotation
     send_command "get rotation_key_10"
-    if wait_for_output 3 && tail -10 "$LOG_FILE" | grep -v "not found\|Not found" | grep -q "rotation_key_10"; then
+    if wait_for_output 3 && tail -20 "$LOG_FILE" | grep -q "rotation_key_10:"; then
         log_test_result "Data Integrity After Rotation" "PASS"
     else
         log_test_result "Data Integrity After Rotation" "FAIL"
@@ -215,7 +215,7 @@ test_merge_operations() {
     
     # Verify data integrity after merge
     send_command "get rotation_key_15"
-    if wait_for_output 3 && tail -10 "$LOG_FILE" | grep -v "not found\|Not found" | grep -q "rotation_key_15"; then
+    if wait_for_output 3 && tail -20 "$LOG_FILE" | grep -q "rotation_key_15:"; then
         log_test_result "Data Integrity After Manual Merge" "PASS"
     else
         log_test_result "Data Integrity After Manual Merge" "FAIL"
@@ -234,7 +234,7 @@ test_auto_merge() {
     
     # Verify data integrity 
     send_command "get rotation_key_20"
-    if tail -10 "$LOG_FILE" | grep -v "not found\|Not found" | grep -q "rotation_key_20"; then
+    if wait_for_output 2 && tail -20 "$LOG_FILE" | grep -q "rotation_key_20:"; then
         log_test_result "Data Integrity Check" "PASS"
     else
         log_test_result "Data Integrity Check" "FAIL"
@@ -254,8 +254,8 @@ test_concurrent_operations() {
     # Verify all were processed
     local success_count=0
     for i in {1..10}; do
-        send_command "get rapid_$i" 0.05
-        if wait_for_output 1 && tail -5 "$LOG_FILE" | grep -q "value_$i"; then
+        send_command "get rapid_$i" 0.1
+        if wait_for_output 1 && tail -10 "$LOG_FILE" | grep -q "rapid_$i:.*value_$i"; then
             success_count=$((success_count + 1))
         fi
     done

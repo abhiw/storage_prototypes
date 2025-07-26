@@ -1,8 +1,8 @@
 # Data Intensive Applications
 
 ## TODO
-- Add crc and timestamp tp file entry structure.
-- Only value position is needed in hash table file offset along with value size and timestamp
+- ~~Add crc and timestamp tp file entry structure.~~
+- ~~Only value position is needed in hash table file offset along with value size and timestamp~~
 - Benchmark somehow. No idea how to do it yet.
 - Probably add a in memory hash table instead of using active file to write data and dump it at intervals to file.
 

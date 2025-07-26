@@ -1,16 +1,22 @@
-
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::storage::HashTableTrait;
 
 /// Represents a file location with filename and byte offset
 #[derive(Debug, Clone)]
 pub struct FileLocation {
     pub filename: String,
-    pub offset: u64,
+    pub value_size: u32,
+    pub value_offset: u64,
+    pub crc: u16,
+    pub timestamp: u64,
 }
 
 impl FileLocation {
-    pub fn new(filename: String, offset: u64) -> Self {
-        FileLocation { filename, offset }
+    pub fn new(filename: String, value_size: u32, value_offset: u64, crc: u16) -> Self {
+        let now = SystemTime::now();
+        let since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let nanos = since_epoch.as_secs() * 1_000_000_000 + since_epoch.subsec_nanos() as u64;
+        FileLocation { filename, value_size, value_offset, crc, timestamp: nanos }
     }
 }
 

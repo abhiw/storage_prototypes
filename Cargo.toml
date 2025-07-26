@@ -7,3 +7,4 @@ edition = "2024"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 mio = { version = "0.8.11", features = ["os-poll", "os-ext"] }
+crc = "3.3.0"

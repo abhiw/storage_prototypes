@@ -39,8 +39,7 @@ fn init() -> (Storage, StorageConfig) {
 }
 
 fn main() {
-    println!("=== Interactive Hash Table Storage System ===
-");
+    println!("=== Interactive Hash Table Storage System ===");
     
     let (mut storage, config) = init();
     let mut hash_table = HashTable::new(127, CollisionResolution::Chaining);
